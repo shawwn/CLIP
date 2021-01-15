@@ -21,11 +21,94 @@ import sys
 import random
 import posix
 
+import atomicwrites
+import tempfile
+
+from functools import partial
+import aiofile
+import contextlib
+import time
+
 def maketree(path):
+  try:
+    os.makedirs(path)
+  except:
+    pass
+
+def atomicwrite(path, mode='wb', overwrite=True):
+  #root='/Volumes/birdie/'; path=root+'http/c8.alamy.com/comp/K07NFE/russian-soldiers-on-parade-in-a-street-during-the-first-world-war-K07NFE.jpg'; writer = atomicwrites.AtomicWriter(path, mode='wb'); ctx = writer._open(partial(writer.get_fileobject, dir=root+'tmp')); f = ctx.__enter__()
+  dir = os.path.join(args.root, 'tmp')
+  maketree(dir)
+  parentdir = os.path.dirname(path)
+  if parentdir:
+    maketree(parentdir)
+  writer = atomicwrites.AtomicWriter(path, mode=mode, overwrite=overwrite)
+  ctx = writer._open(partial(writer.get_fileobject, dir=dir))
+  return ctx
+
+
+def toomany(opener, *args, delay=0.1, **kws):
+  attempts = 0
+  while True:
+    attempts += 1
     try:
-        os.makedirs(path)
+      return opener(*args, **kws)
+    except OSError as e:
+      if e.errno == 24 and attempts < 500:
+        time.sleep(delay)
+      else:
+        raise
+
+
+@contextlib.asynccontextmanager
+async def atoomany(opener, *args, delay=0.1, **kws):
+  attempts = 0
+  while True:
+    attempts += 1
+    try:
+      async with opener(*args, **kws) as f:
+        yield f
+        return
+    except OSError as e:
+      if e.errno == 24 and attempts < 500:
+        await asyncio.sleep(delay)
+      else:
+        raise
+
+@contextlib.contextmanager
+def atomicwrite2(path, mode='wb', overwrite=True):
+  #root='/Volumes/birdie/'; path=root+'http/c8.alamy.com/comp/K07NFE/russian-soldiers-on-parade-in-a-street-during-the-first-world-war-K07NFE.jpg'; writer = atomicwrites.AtomicWriter(path, mode='wb'); ctx = writer._open(partial(writer.get_fileobject, dir=root+'tmp')); f = ctx.__enter__()
+  dir = os.path.join(args.root, 'tmp')
+  maketree(dir)
+  parentdir = os.path.dirname(path)
+  if parentdir:
+    maketree(parentdir)
+  descriptor, name = toomany(tempfile.mkstemp, suffix='.tmp', dir=dir)
+  os.close(descriptor)
+  try:
+    with toomany(open, name, mode) as f:
+      yield f
+    os.rename(src=name, dst=path)
+  except:
+    try:
+      os.unlink(name)
     except:
-        pass
+      pass
+    raise
+
+
+
+
+def writebytes(path, filebytes, **kws):
+  with atomicwrite2(path, **kws) as f:
+    f.write(filebytes)
+
+import concurrent.futures
+
+async def awritebytes(path, filebytes, **kws):
+  loop = asyncio.get_running_loop()
+  pool = None # concurrent.futures.ThreadPoolExecutor()
+  await loop.run_in_executor(pool, lambda: writebytes(path, filebytes, **kws))
 
 sem = asyncio.BoundedSemaphore(64)
 
@@ -59,20 +142,32 @@ async def process(client, callback, url, pbar, fake=False, timeout=None):
   else:
     noisy = True
     try:
-      response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
-      try:
-        if response.status_code == 200:
-          try:
-            await callback(None, response, url=url)
-          except:
-            with tqdm.tqdm.external_write_mode(file=sys.stdout):
-              traceback.print_exc()
-        else:
-          noisy = False
+      filepath = url2path(url)
+      if os.path.isfile(filepath):
+        response = Namespace()
+        response.url = url
+        response.close = lambda: None
+        response.status_code = 200
+        async with atoomany(aiofile.async_open, filepath, 'rb') as f:
+          response.content = await f.read()
+        await callback(None, response, url=url)
+      else:
+        response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
+        try:
+          if response.status_code == 200:
+            try:
+              #writebytes(filepath, response.content)
+              await awritebytes(filepath, response.content)
+              await callback(None, response, url=url)
+            except:
+              with tqdm.tqdm.external_write_mode(file=sys.stdout):
+                traceback.print_exc()
+          else:
+            noisy = False
+            response.close()
+            await response.raise_for_status()
+        finally:
           response.close()
-          await response.raise_for_status()
-      finally:
-        response.close()
     except Exception as caught:
       if isinstance(caught, (httpx.ConnectError, httpcore.RemoteProtocolError, httpx.RemoteProtocolError)):
         noisy = False
@@ -84,7 +179,7 @@ async def process(client, callback, url, pbar, fake=False, timeout=None):
       await callback(caught, response, url=url)
       #report_error(caught, data=orig, path=path, code=response.status_code)
         
-def shuffled(items, buffer_size=10_000):
+def shuffled(items, buffer_size=100_000):
   buffer = []
   def pop():
     idx = random.randint(0, len(buffer) - 1)
@@ -102,6 +197,16 @@ args = Namespace()
 args.args = []
 args.concurrency=100
 args.maxcount=sys.maxsize
+args.root = os.path.join(os.getcwd(), 'download')
+
+def url2path(url):
+  u = urlparse(url)
+  #path = u.netloc + u.path
+  path = u.scheme + '/' + u.netloc + u.path
+  if u.query:
+    path += '?' + u.query
+  filepath = os.path.join(args.root, path)
+  return filepath
 
 async def main(loop, urls):
   with utils.LineStream() as stream:
