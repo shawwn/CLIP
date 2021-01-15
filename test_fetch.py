@@ -53,7 +53,7 @@ async def process(callback, url, pbar, fake=False, timeout=60.0):
         response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
         if response.status_code == 200:
           try:
-            await callback(None, response)
+            await callback(None, response, url=url)
           except:
             with tqdm.tqdm.external_write_mode(file=sys.stdout):
               traceback.print_exc()
@@ -63,7 +63,7 @@ async def process(callback, url, pbar, fake=False, timeout=60.0):
         #traceback.print_exc()
         response = Namespace()
         response.url = url
-        await callback(caught, response)
+        await callback(caught, response, url=url)
         #report_error(caught, data=orig, path=path, code=response.status_code)
         
 def shuffled(items, buffer_size=10000):
@@ -87,16 +87,17 @@ async def main(loop, urls, concurrency=100):
     failed_count = 0
     current_item = ''
     dltasks = set()
-    def update():
+    def update(url):
       n = len(dltasks)
+      stream.finish(url)
       stream.pbar.set_description('%d in-flight / %d done (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), current_item))
       stream.pbar.refresh()
-    async def callback(err, response):
+    async def callback(err, response, url):
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
         #stream.pbar.write('Failed: {!r}: {!r}'.format(str(response.url), response))
         failed_count += 1
-        update()
+        update(url)
         return
       received_count += 1
       received_bytes += len(response.content)
@@ -108,7 +109,7 @@ async def main(loop, urls, concurrency=100):
         path = u.netloc + u.path
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
-        update()
+        update(url)
     for i, url in enumerate(shuffled(stream(urls, miniters=10))):
       current_item = url.rsplit('/', 1)[-1]
       if len(dltasks) >= concurrency:

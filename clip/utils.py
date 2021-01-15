@@ -3,6 +3,7 @@ import tqdm
 import os
 from urllib.parse import urlparse
 from contextlib import ExitStack
+import multidict
 
 ITER_CHUNK_SIZE = 512
 
@@ -118,6 +119,8 @@ class LineStream(ExitStack):
         self.url = None
         self.closed = False
         self.lines = []
+        self.decode_unicode = decode_unicode
+        self.sizes = multidict.MultiDict()
 
         if isinstance(iterator_or_url, str):
             self.url = iterator_or_url
@@ -135,15 +138,6 @@ class LineStream(ExitStack):
 
         self.pbar = tqdm.tqdm(total=total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, unit_scale=unit_scale, **tqdm_options)
         self.enter_context(self.pbar)
-
-        def update(line):
-            self.pbar.update(len(line))
-            line = line.splitlines()
-            assert len(line) == 1
-            line = line[0]
-            if isinstance(line, bytes) and decode_unicode:
-                line = line.decode('utf-8')
-            return line
 
         for chunk in self.iterator:
 
@@ -166,11 +160,25 @@ class LineStream(ExitStack):
                         return
                     else:
                         break
-                yield update(line)
+                yield self.update(line)
 
         if self.pending is not None:
-            yield update(self.pending)
+            yield self.update(self.pending)
 
+
+    def update(self, line):
+        n = len(line)
+        line = line.splitlines()
+        assert len(line) == 1
+        line = line[0]
+        if isinstance(line, bytes) and self.decode_unicode:
+            line = line.decode('utf-8')
+        self.sizes.add(line, n)
+        return line
+
+    def finish(self, line):
+        n = self.sizes.pop(line)
+        self.pbar.update(n)
 
 
 # Python 3.5 backport. Is there a more elegant way to get a nullcontext?
