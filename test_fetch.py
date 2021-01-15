@@ -84,7 +84,7 @@ async def process(client, callback, url, pbar, fake=False, timeout=None):
       await callback(caught, response, url=url)
       #report_error(caught, data=orig, path=path, code=response.status_code)
         
-def shuffled(items, buffer_size=1_000_000):
+def shuffled(items, buffer_size=10_000):
   buffer = []
   def pop():
     idx = random.randint(0, len(buffer) - 1)
