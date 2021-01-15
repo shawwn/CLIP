@@ -21,7 +21,6 @@ import sys
 import random
 import posix
 
-import atomicwrites
 import tempfile
 
 from functools import partial
@@ -42,6 +41,7 @@ def atomicwrite(path, mode='wb', overwrite=True):
   parentdir = os.path.dirname(path)
   if parentdir:
     maketree(parentdir)
+  import atomicwrites
   writer = atomicwrites.AtomicWriter(path, mode=mode, overwrite=overwrite)
   ctx = writer._open(partial(writer.get_fileobject, dir=dir))
   return ctx
