@@ -89,14 +89,13 @@ async def main(loop, urls, concurrency=100):
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
     for i, url in enumerate(stream(urls)):
-        n = len(dltasks)
-        stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), url.rsplit('/', 1)[-1]))
-        if len(dltasks) >= concurrency:
-            # Wait for some download to finish before adding a new one
-            _done, dltasks = await asyncio.wait(
-                dltasks, return_when=asyncio.FIRST_COMPLETED)
-        task = process(callback, url, pbar=stream.pbar)
-        dltasks.add(loop.create_task(task))
+      n = len(dltasks)
+      stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), url.rsplit('/', 1)[-1]))
+      if len(dltasks) >= concurrency:
+        # Wait for some download to finish before adding a new one
+        _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
+      task = process(callback, url, pbar=stream.pbar)
+      dltasks.add(loop.create_task(task))
     # Wait for the remaining downloads to finish
     await asyncio.wait(dltasks)
 
