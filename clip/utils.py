@@ -119,59 +119,57 @@ class LineStream(ExitStack):
         self.closed = False
         self.lines = []
 
-        with self:
+        if isinstance(iterator_or_url, str):
+            self.url = iterator_or_url
+            if total_bytes is None:
+                total_bytes = fetch_url_content_length(self.url)
+            self.iterator = fetch_url_streaming(self.url)
 
-            if isinstance(iterator_or_url, str):
-                self.url = iterator_or_url
-                if total_bytes is None:
-                    total_bytes = fetch_url_content_length(self.url)
-                self.iterator = fetch_url_streaming(self.url)
+        self.enter_context(self.iterator)
 
-            self.enter_context(self.iterator)
+        if hasattr(self.iterator, 'iter_content'):
+            self.iterator = self.iterator.iter_content(chunk_size=chunk_size, decode_unicode=False)
 
-            if hasattr(self.iterator, 'iter_content'):
-                self.iterator = self.iterator.iter_content(chunk_size=chunk_size, decode_unicode=False)
+        self.pending = None
+        disable_progress_bar = total_bytes is None or not progress_bar
 
-            self.pending = None
-            disable_progress_bar = total_bytes is None or not progress_bar
+        self.pbar = tqdm.tqdm(total=total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, unit_scale=unit_scale, **tqdm_options)
+        self.enter_context(self.pbar)
 
-            self.pbar = tqdm.tqdm(total=total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, unit_scale=unit_scale, **tqdm_options)
-            self.enter_context(self.pbar)
+        def update(line):
+            self.pbar.update(len(line))
+            line = line.splitlines()
+            assert len(line) == 1
+            line = line[0]
+            if isinstance(line, bytes) and decode_unicode:
+                line = line.decode('utf-8')
+            return line
 
-            def update(line):
-                self.pbar.update(len(line))
-                line = line.splitlines()
-                assert len(line) == 1
-                line = line[0]
-                if isinstance(line, bytes) and decode_unicode:
-                    line = line.decode('utf-8')
-                return line
-
-            for chunk in self.iterator:
-
-                if self.pending is not None:
-                    chunk = self.pending + chunk
-
-                lines = chunk.splitlines(keepends=True)
-
-                if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                    self.pending = lines.pop()
-                else:
-                    self.pending = None
-
-                self.lines = lines
-                while True:
-                    try:
-                        line = self.lines.pop(0)
-                    except IndexError:
-                        if self.closed:
-                            return
-                        else:
-                            break
-                    yield update(line)
+        for chunk in self.iterator:
 
             if self.pending is not None:
-                yield update(self.pending)
+                chunk = self.pending + chunk
+
+            lines = chunk.splitlines(keepends=True)
+
+            if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
+                self.pending = lines.pop()
+            else:
+                self.pending = None
+
+            self.lines = lines
+            while True:
+                try:
+                    line = self.lines.pop(0)
+                except IndexError:
+                    if self.closed:
+                        return
+                    else:
+                        break
+                yield update(line)
+
+        if self.pending is not None:
+            yield update(self.pending)
 
 
 
