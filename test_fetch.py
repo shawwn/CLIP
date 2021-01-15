@@ -6,6 +6,7 @@ import contextlib
 from clip import utils
 
 import httpx
+import httpcore
 import asyncio
 import traceback
 
@@ -16,7 +17,9 @@ from argparse import Namespace
 
 from urllib.parse import urlparse
 import os
+import sys
 import random
+import posix
 
 sem = asyncio.BoundedSemaphore(64)
 
@@ -41,16 +44,17 @@ async def data_to_url_async(path):
         report_error(caught, data=orig, path=path, code=response.status_code)
 
 
-async def process(callback, url, pbar, fake=False, timeout=60.0):
+async def process(client, callback, url, pbar, fake=False, timeout=None):
   if fake:
     wait_time = randint(1, 2)
     pbar.write('downloading {} will take {} second(s)'.format(url, wait_time))
     await asyncio.sleep(wait_time)  # I/O, context will switch to main function
     pbar.write('downloaded {}'.format(url))
   else:
-    async with httpx.AsyncClient() as client:
+    noisy = True
+    try:
+      response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
       try:
-        response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
         if response.status_code == 200:
           try:
             await callback(None, response, url=url)
@@ -58,15 +62,23 @@ async def process(callback, url, pbar, fake=False, timeout=60.0):
             with tqdm.tqdm.external_write_mode(file=sys.stdout):
               traceback.print_exc()
         else:
+          noisy = False
+          response.close()
           await response.raise_for_status()
-      except Exception as caught:
-        #traceback.print_exc()
-        response = Namespace()
-        response.url = url
-        await callback(caught, response, url=url)
-        #report_error(caught, data=orig, path=path, code=response.status_code)
+      finally:
+        response.close()
+    except Exception as caught:
+      if isinstance(caught, (httpx.ConnectError, httpcore.RemoteProtocolError, httpx.RemoteProtocolError)):
+        noisy = False
+      if noisy:
+        with tqdm.tqdm.external_write_mode(file=sys.stdout):
+          traceback.print_exc()
+      response = Namespace()
+      response.url = url
+      await callback(caught, response, url=url)
+      #report_error(caught, data=orig, path=path, code=response.status_code)
         
-def shuffled(items, buffer_size=10000):
+def shuffled(items, buffer_size=1_000_000):
   buffer = []
   def pop():
     idx = random.randint(0, len(buffer) - 1)
@@ -80,7 +92,7 @@ def shuffled(items, buffer_size=10000):
     result = pop()
     yield result
 
-async def main(loop, urls, concurrency=100):
+async def main(loop, urls, concurrency=100, maxcount=sys.maxsize):
   with utils.LineStream() as stream:
     received_bytes = 0
     received_count = 0
@@ -102,7 +114,7 @@ async def main(loop, urls, concurrency=100):
       received_count += 1
       received_bytes += len(response.content)
       image_bytes = response.content
-      with PIL.Image.open(BytesIO(image_bytes)) as image:
+      with BytesIO(image_bytes) as bio, PIL.Image.open(bio) as image:
         url = str(response.url)
         #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
         u = urlparse(url)
@@ -110,21 +122,26 @@ async def main(loop, urls, concurrency=100):
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
         update()
-    for i, url in enumerate(shuffled(stream(urls, miniters=10))):
-      current_item = url.rsplit('/', 1)[-1]
-      if len(dltasks) >= concurrency:
-        # Wait for some download to finish before adding a new one
-        _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
-      task = process(callback, url, pbar=stream.pbar)
-      dltasks.add(loop.create_task(task))
-    # Wait for the remaining downloads to finish
-    await asyncio.wait(dltasks)
+    #limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+    limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
+    async with httpx.AsyncClient(limits=limits) as client:
+      for i, url in enumerate(shuffled(stream(urls))):
+        if i - concurrency >= maxcount:
+          posix._exit(1)
+        current_item = '...' + url.rsplit('/', 1)[-1][-40:]
+        if len(dltasks) >= concurrency:
+          # Wait for some download to finish before adding a new one
+          _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
+        task = process(client, callback, url, pbar=stream.pbar)
+        dltasks.add(loop.create_task(task))
+      # Wait for the remaining downloads to finish
+      await asyncio.wait(dltasks)
 
 
 if __name__ == '__main__':
-  import sys
   args = sys.argv[1:]
   urls = args[0] if len(args) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
   concurrency = int(args[1]) if len(args) >= 2 else 100
+  maxcount = int(args[2]) if len(args) >= 3 else sys.maxsize
   loop = asyncio.get_event_loop()
-  loop.run_until_complete(main(loop, urls, concurrency=concurrency))
+  loop.run_until_complete(main(loop, urls, concurrency=concurrency, maxcount=maxcount))
