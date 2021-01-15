@@ -21,6 +21,12 @@ import sys
 import random
 import posix
 
+def maketree(path):
+    try:
+        os.makedirs(path)
+    except:
+        pass
+
 sem = asyncio.BoundedSemaphore(64)
 
 async def data_to_url_async(path):
@@ -92,7 +98,12 @@ def shuffled(items, buffer_size=1_000_000):
     result = pop()
     yield result
 
-async def main(loop, urls, concurrency=100, maxcount=sys.maxsize):
+args = Namespace()
+args.args = []
+args.concurrency=100
+args.maxcount=sys.maxsize
+
+async def main(loop, urls):
   with utils.LineStream() as stream:
     received_bytes = 0
     received_count = 0
@@ -115,10 +126,13 @@ async def main(loop, urls, concurrency=100, maxcount=sys.maxsize):
       received_bytes += len(response.content)
       image_bytes = response.content
       with BytesIO(image_bytes) as bio, PIL.Image.open(bio) as image:
-        url = str(response.url)
+        #url = str(response.url)
         #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
         u = urlparse(url)
-        path = u.netloc + u.path
+        #path = u.netloc + u.path
+        path = u.scheme + '/' + u.netloc + u.path
+        if u.query:
+          path += '?' + u.query
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
         update()
@@ -126,10 +140,10 @@ async def main(loop, urls, concurrency=100, maxcount=sys.maxsize):
     limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
     async with httpx.AsyncClient(limits=limits) as client:
       for i, url in enumerate(shuffled(stream(urls))):
-        if i - concurrency >= maxcount:
+        if i - args.concurrency >= args.maxcount:
           posix._exit(1)
         current_item = '...' + url.rsplit('/', 1)[-1][-40:]
-        if len(dltasks) >= concurrency:
+        if len(dltasks) >= args.concurrency:
           # Wait for some download to finish before adding a new one
           _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
         task = process(client, callback, url, pbar=stream.pbar)
@@ -139,9 +153,9 @@ async def main(loop, urls, concurrency=100, maxcount=sys.maxsize):
 
 
 if __name__ == '__main__':
-  args = sys.argv[1:]
-  urls = args[0] if len(args) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
-  concurrency = int(args[1]) if len(args) >= 2 else 100
-  maxcount = int(args[2]) if len(args) >= 3 else sys.maxsize
+  argv = args.args = sys.argv[1:]
+  urls = argv[0] if len(argv) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
+  args.concurrency = int(argv[1]) if len(argv) >= 2 else 100
+  args.maxcount = int(argv[2]) if len(argv) >= 3 else sys.maxsize
   loop = asyncio.get_event_loop()
-  loop.run_until_complete(main(loop, urls, concurrency=concurrency, maxcount=maxcount))
+  loop.run_until_complete(main(loop, urls))
