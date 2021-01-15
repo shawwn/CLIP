@@ -16,6 +16,7 @@ from argparse import Namespace
 
 from urllib.parse import urlparse
 import os
+import random
 
 sem = asyncio.BoundedSemaphore(64)
 
@@ -65,18 +66,37 @@ async def process(callback, url, pbar, fake=False, timeout=60.0):
         await callback(caught, response)
         #report_error(caught, data=orig, path=path, code=response.status_code)
         
+def shuffled(items, buffer_size=10000):
+  buffer = []
+  def pop():
+    idx = random.randint(0, len(buffer) - 1)
+    return buffer.pop(idx)
+  for item in items:
+    buffer.append(item)
+    if len(buffer) >= buffer_size:
+      result = pop()
+      yield result
+  while len(buffer) > 0:
+    result = pop()
+    yield result
 
 async def main(loop, urls, concurrency=100):
   with utils.LineStream() as stream:
     received_bytes = 0
     received_count = 0
     failed_count = 0
+    current_item = ''
     dltasks = set()
+    def update():
+      n = len(dltasks)
+      stream.pbar.set_description('%d in-flight / %d done (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), current_item))
+      stream.pbar.refresh()
     async def callback(err, response):
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
         #stream.pbar.write('Failed: {!r}: {!r}'.format(str(response.url), response))
         failed_count += 1
+        update()
         return
       received_count += 1
       received_bytes += len(response.content)
@@ -88,9 +108,9 @@ async def main(loop, urls, concurrency=100):
         path = u.netloc + u.path
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
-    for i, url in enumerate(stream(urls)):
-      n = len(dltasks)
-      stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), url.rsplit('/', 1)[-1]))
+        update()
+    for i, url in enumerate(shuffled(stream(urls, miniters=10))):
+      current_item = url.rsplit('/', 1)[-1]
       if len(dltasks) >= concurrency:
         # Wait for some download to finish before adding a new one
         _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
