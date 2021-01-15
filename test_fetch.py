@@ -195,7 +195,7 @@ def shuffled(items, buffer_size=100_000):
 
 args = Namespace()
 args.args = []
-args.concurrency=100
+args.concurrency=50
 args.maxcount=sys.maxsize
 args.root = os.path.join(os.getcwd(), 'download')
 
@@ -273,7 +273,7 @@ async def main(loop, urls):
 if __name__ == '__main__':
   argv = args.args = sys.argv[1:]
   urls = argv[0] if len(argv) >= 1 and argv[0] else 'https://battle.shawwn.com/danbooru2019-s.txt'
-  args.concurrency = int(argv[1]) if len(argv) >= 2 else 15
-  args.maxcount = int(argv[2]) if len(argv) >= 3 else sys.maxsize
+  args.concurrency = int(argv[1]) if len(argv) >= 2 else args.concurrency
+  args.maxcount = int(argv[2]) if len(argv) >= 3 else args.maxcount
   loop = asyncio.get_event_loop()
   loop.run_until_complete(main(loop, urls))
