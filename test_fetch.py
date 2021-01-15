@@ -132,7 +132,7 @@ async def data_to_url_async(path):
         report_error(caught, data=orig, path=path, code=response.status_code)
 
 
-async def process(client, callback, url, pbar, fake=False, timeout=3.0):
+async def process(client, callback, url, pbar, fake=False, timeout=30.0):
   if fake:
     wait_time = randint(1, 2)
     pbar.write('downloading {} will take {} second(s)'.format(url, wait_time))
@@ -257,7 +257,7 @@ async def main(loop, urls):
         )
     async with httpx.AsyncClient(limits=limits) as client:
       for i, url in enumerate(shuffled(stream(urls, bar_format=bar_format))):
-        if i - args.concurrency >= args.maxcount:
+        if received_count + failed_count >= args.maxcount:
           posix._exit(1)
         current_item = '...' + url.rsplit('/', 1)[-1][-40:]
         if len(dltasks) >= args.concurrency:
