@@ -133,7 +133,7 @@ async def data_to_url_async(path):
         report_error(caught, data=orig, path=path, code=response.status_code)
 
 
-async def process(client, callback, url, pbar, fake=False, timeout=None):
+async def process(client, callback, url, pbar, fake=False, timeout=3.0):
   if fake:
     wait_time = randint(1, 2)
     pbar.write('downloading {} will take {} second(s)'.format(url, wait_time))
@@ -273,7 +273,7 @@ async def main(loop, urls):
 if __name__ == '__main__':
   argv = args.args = sys.argv[1:]
   urls = argv[0] if len(argv) >= 1 and argv[0] else 'https://battle.shawwn.com/danbooru2019-s.txt'
-  args.concurrency = int(argv[1]) if len(argv) >= 2 else 100
+  args.concurrency = int(argv[1]) if len(argv) >= 2 else 15
   args.maxcount = int(argv[2]) if len(argv) >= 3 else sys.maxsize
   loop = asyncio.get_event_loop()
   loop.run_until_complete(main(loop, urls))
