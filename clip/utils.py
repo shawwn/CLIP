@@ -177,8 +177,11 @@ class LineStream(ExitStack):
         return line
 
     def finish(self, line):
-        n = self.sizes.pop(line)
-        self.pbar.update(n)
+        try:
+          n = self.sizes.pop(line)
+          self.pbar.update(n)
+        except KeyError:
+          pass
 
 
 # Python 3.5 backport. Is there a more elegant way to get a nullcontext?
