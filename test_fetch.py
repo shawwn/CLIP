@@ -2,7 +2,6 @@
 from random import randint
 import asyncio
 import tqdm
-import contextlib
 from clip import utils
 
 import httpx
@@ -25,7 +24,7 @@ import tempfile
 
 from functools import partial
 import aiofile
-import contextlib
+from clip import contextlib
 import time
 
 def maketree(path):
