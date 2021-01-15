@@ -112,7 +112,11 @@ async def main(loop, urls):
     dltasks = set()
     def update():
       n = len(dltasks)
-      stream.pbar.set_description('%d in-flight / %d done (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), current_item))
+      t = stream.pbar.n / stream.pbar.total
+      est_bytes = int(received_bytes / t) if t > 0 else 0
+      est_count = int((received_count + failed_count) / t) if t > 0 else 0
+      stream.pbar.set_description('%d in-flight | %d done + %d failed of ~%s | %.2f MB of ~%.2f GB [%s]' % (
+        n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), current_item))
       stream.pbar.refresh()
     async def callback(err, response, url):
       stream.finish(url)
@@ -134,12 +138,21 @@ async def main(loop, urls):
         if u.query:
           path += '?' + u.query
         #stream.pbar.write(os.path.join(u.netloc, u.path))
-        stream.pbar.write(path)
+        dim = ('%dx%d' % (image.width, image.height)).ljust(10)
+        fmt = image.format.ljust(5)
+        stream.pbar.write(dim + fmt + path)
         update()
     #limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
     limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
+    bar_format = r'{l_bar}{bar}{r_bar}'.format(
+        #l_bar='{desc}: {percentage:3.0f}%|',
+        #r_bar='| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, ' '{rate_fmt}{postfix}]',
+        l_bar='{desc}',
+        r_bar='| {percentage:3.3f}% [{elapsed}<{remaining}]',
+        bar='{bar}'
+        )
     async with httpx.AsyncClient(limits=limits) as client:
-      for i, url in enumerate(shuffled(stream(urls))):
+      for i, url in enumerate(shuffled(stream(urls, bar_format=bar_format))):
         if i - args.concurrency >= args.maxcount:
           posix._exit(1)
         current_item = '...' + url.rsplit('/', 1)[-1][-40:]
@@ -154,7 +167,7 @@ async def main(loop, urls):
 
 if __name__ == '__main__':
   argv = args.args = sys.argv[1:]
-  urls = argv[0] if len(argv) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
+  urls = argv[0] if len(argv) >= 1 and argv[0] else 'https://battle.shawwn.com/danbooru2019-s.txt'
   args.concurrency = int(argv[1]) if len(argv) >= 2 else 100
   args.maxcount = int(argv[2]) if len(argv) >= 3 else sys.maxsize
   loop = asyncio.get_event_loop()
