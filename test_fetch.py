@@ -105,7 +105,7 @@ def writebytes(path, filebytes, **kws):
 import concurrent.futures
 
 async def awritebytes(path, filebytes, **kws):
-  loop = asyncio.get_running_loop()
+  loop = asyncio._get_running_loop()
   pool = None # concurrent.futures.ThreadPoolExecutor()
   await loop.run_in_executor(pool, lambda: writebytes(path, filebytes, **kws))
 
