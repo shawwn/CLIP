@@ -87,17 +87,17 @@ async def main(loop, urls, concurrency=100):
     failed_count = 0
     current_item = ''
     dltasks = set()
-    def update(url):
+    def update():
       n = len(dltasks)
-      stream.finish(url)
       stream.pbar.set_description('%d in-flight / %d done (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), current_item))
       stream.pbar.refresh()
     async def callback(err, response, url):
+      stream.finish(url)
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
         #stream.pbar.write('Failed: {!r}: {!r}'.format(str(response.url), response))
         failed_count += 1
-        update(url)
+        update()
         return
       received_count += 1
       received_bytes += len(response.content)
@@ -109,7 +109,7 @@ async def main(loop, urls, concurrency=100):
         path = u.netloc + u.path
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
-        update(url)
+        update()
     for i, url in enumerate(shuffled(stream(urls, miniters=10))):
       current_item = url.rsplit('/', 1)[-1]
       if len(dltasks) >= concurrency:
