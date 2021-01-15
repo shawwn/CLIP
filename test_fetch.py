@@ -66,7 +66,7 @@ async def process(callback, url, pbar, fake=False, timeout=60.0):
         #report_error(caught, data=orig, path=path, code=response.status_code)
         
 
-async def main(loop, url, concurrency=100):
+async def main(loop, urls, concurrency=100):
   with utils.LineStream() as stream:
     received_bytes = 0
     received_count = 0
@@ -88,14 +88,14 @@ async def main(loop, url, concurrency=100):
         path = u.netloc + u.path
         #stream.pbar.write(os.path.join(u.netloc, u.path))
         stream.pbar.write(path)
-    for i, line in enumerate(stream(url)):
+    for i, url in enumerate(stream(urls)):
         n = len(dltasks)
-        stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), line.rsplit('/', 1)[-1]))
+        stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), url.rsplit('/', 1)[-1]))
         if len(dltasks) >= concurrency:
             # Wait for some download to finish before adding a new one
             _done, dltasks = await asyncio.wait(
                 dltasks, return_when=asyncio.FIRST_COMPLETED)
-        task = process(callback, line, pbar=stream.pbar)
+        task = process(callback, url, pbar=stream.pbar)
         dltasks.add(loop.create_task(task))
     # Wait for the remaining downloads to finish
     await asyncio.wait(dltasks)
@@ -104,7 +104,7 @@ async def main(loop, url, concurrency=100):
 if __name__ == '__main__':
   import sys
   args = sys.argv[1:]
-  url = args[0] if len(args) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
+  urls = args[0] if len(args) >= 1 else 'https://battle.shawwn.com/danbooru2019-s.txt'
   concurrency = int(args[1]) if len(args) >= 2 else 100
   loop = asyncio.get_event_loop()
-  loop.run_until_complete(main(loop, url, concurrency=concurrency))
+  loop.run_until_complete(main(loop, urls, concurrency=concurrency))
