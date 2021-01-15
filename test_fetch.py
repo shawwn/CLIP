@@ -81,13 +81,13 @@ async def main(loop, url, concurrency=100):
       received_count += 1
       received_bytes += len(response.content)
       image_bytes = response.content
-      image = PIL.Image.open(BytesIO(image_bytes))
-      url = str(response.url)
-      #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
-      u = urlparse(url)
-      path = u.netloc + u.path
-      #stream.pbar.write(os.path.join(u.netloc, u.path))
-      stream.pbar.write(path)
+      with PIL.Image.open(BytesIO(image_bytes)) as image:
+        url = str(response.url)
+        #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
+        u = urlparse(url)
+        path = u.netloc + u.path
+        #stream.pbar.write(os.path.join(u.netloc, u.path))
+        stream.pbar.write(path)
     for i, line in enumerate(stream(url)):
         n = len(dltasks)
         stream.pbar.set_description('%d in-flight / %d finished (%d failed) / %.2f MB [%s]' % (n, received_count, failed_count, received_bytes / (1024*1024), line.rsplit('/', 1)[-1]))
