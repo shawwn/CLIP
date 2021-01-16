@@ -281,6 +281,16 @@ def patch_set_cookie_header(*args, **kws):
   #sys.stdout.flush()
   pass
 
+import http
+
+@mock_method('patch_set_cookie', http.CookieJar, 'set_cookie',
+    doc="""Disable cookies for performance""")
+def patch_set_cookie(*args, **kws):
+  #import pdb; pdb.set_trace()
+  #print('patched')
+  #sys.stdout.flush()
+  pass
+
 async def main(loop, urls):
   with utils.LineStream() as stream:
     received_bytes = 0
