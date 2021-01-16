@@ -281,9 +281,9 @@ def patch_set_cookie_header(*args, **kws):
   #sys.stdout.flush()
   pass
 
-import http
+import http.cookiejar
 
-@mock_method('patch_set_cookie', http.CookieJar, 'set_cookie',
+@mock_method('patch_set_cookie', http.cookiejar.CookieJar, 'set_cookie',
     doc="""Disable cookies for performance""")
 def patch_set_cookie(*args, **kws):
   #import pdb; pdb.set_trace()
