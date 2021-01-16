@@ -173,16 +173,20 @@ class LineStream(ExitStack):
         line = line[0]
         if isinstance(line, bytes) and self.decode_unicode:
             line = line.decode('utf-8')
-        self.sizes.add(line, n)
+        #self.sizes.add(line, n)
         return line
 
     def finish(self, line):
-        try:
-          n = self.sizes.pop(line)
+        if False:
+          try:
+            n = self.sizes.pop(line)
+          except KeyError:
+            n = 0
+        else:
+          n = len(line.encode('utf-8')) + 1
+        if n > 0:
           self.pbar.update(n)
           return True
-        except KeyError:
-          pass
 
 
 # Python 3.5 backport. Is there a more elegant way to get a nullcontext?
