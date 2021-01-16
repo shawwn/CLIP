@@ -46,7 +46,7 @@ def atomicwrite(path, mode='wb', overwrite=True):
   return ctx
 
 
-def toomany(opener, *args, delay=0.1, **kws):
+def toomany(opener, *args, delay=1.0, **kws):
   attempts = 0
   while True:
     attempts += 1
@@ -60,7 +60,7 @@ def toomany(opener, *args, delay=0.1, **kws):
 
 
 @contextlib.asynccontextmanager
-async def atoomany(opener, *args, delay=0.1, **kws):
+async def atoomany(opener, *args, delay=1.0, **kws):
   attempts = 0
   while True:
     attempts += 1
