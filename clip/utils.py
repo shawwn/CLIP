@@ -4,12 +4,14 @@ import os
 from urllib.parse import urlparse
 from contextlib import ExitStack
 import multidict
+import httpx
 
-ITER_CHUNK_SIZE = 512
+ITER_CHUNK_SIZE = 2048
 
 def is_remote_url(url):
-  info = urlparse(url)
-  return bool(info.scheme and info.netloc)
+  #info = urlparse(url)
+  #return bool(info.scheme and info.netloc)
+  return url.startswith('http://') or url.startswith('https://')
 
 def fetch_url_content_length(url):
   if is_remote_url(url):
@@ -20,9 +22,10 @@ def fetch_url_content_length(url):
 
 def fetch_url_streaming(url):
   if is_remote_url(url):
-    return requests.get(url, stream=True)
+    #return requests.get(url, stream=True)
+    return httpx.stream("GET", url)
   else:
-    return open(url, 'rb')
+    return open(url, 'r')
 
 def iter_lines(
     iterator_or_url,
@@ -128,10 +131,7 @@ class LineStream(ExitStack):
                 total_bytes = fetch_url_content_length(self.url)
             self.iterator = fetch_url_streaming(self.url)
 
-        self.enter_context(self.iterator)
-
-        if hasattr(self.iterator, 'iter_content'):
-            self.iterator = self.iterator.iter_content(chunk_size=chunk_size, decode_unicode=False)
+        self.iterator = self.enter_context(self.iterator)
 
         self.pending = None
         disable_progress_bar = tqdm_options.pop('disable') if 'disable' in tqdm_options else (total_bytes is None or not progress_bar)
@@ -139,31 +139,42 @@ class LineStream(ExitStack):
         self.pbar = tqdm.tqdm(total=total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, unit_scale=unit_scale, **tqdm_options)
         self.enter_context(self.pbar)
 
-        for chunk in self.iterator:
+        if True:
+          if hasattr(self.iterator, 'iter_lines'):
+              self.iterator = self.iterator.iter_lines()
+          for line in self.iterator:
+              yield self.update(line)
+        else:
+          if hasattr(self.iterator, 'iter_content'):
+              self.iterator = self.iterator.iter_content(chunk_size=chunk_size, decode_unicode=decode_unicode)
 
-            if self.pending is not None:
-                chunk = self.pending + chunk
+          for chunk in self.iterator:
 
-            lines = chunk.splitlines(keepends=True)
+              if self.pending is not None:
+                  chunk = self.pending + chunk
 
-            if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
-                self.pending = lines.pop()
-            else:
-                self.pending = None
+              lines = chunk.splitlines(keepends=True)
 
-            self.lines = lines
-            while True:
-                try:
-                    line = self.lines.pop(0)
-                except IndexError:
-                    if self.closed:
-                        return
-                    else:
-                        break
-                yield self.update(line)
+              if lines and lines[-1] and chunk and lines[-1][-1] == chunk[-1]:
+                  self.pending = lines.pop()
+              else:
+                  self.pending = None
 
-        if self.pending is not None:
-            yield self.update(self.pending)
+              self.lines = lines
+              while True:
+                  # if self.closed:
+                  #     return
+                  try:
+                      line = self.lines.pop(0)
+                  except IndexError:
+                      if self.closed:
+                          return
+                      else:
+                          break
+                  yield self.update(line)
+
+          if self.pending is not None:
+              yield self.update(self.pending)
 
 
     def update(self, line):
@@ -182,8 +193,10 @@ class LineStream(ExitStack):
             n = self.sizes.pop(line)
           except KeyError:
             n = 0
-        else:
+        elif False:
           n = len(line.encode('utf-8')) + 1
+        else:
+          n = len(line) + 1
         if n > 0:
           self.pbar.update(n)
           return True
