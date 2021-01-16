@@ -56,7 +56,7 @@ def iter_lines(
             #stack.enter_context(iterator)
 
         pending = None
-        disable_progress_bar = total_bytes is None or not progress_bar
+        disable_progress_bar = tqdm_options.pop('disable') if 'disable' in tqdm_options else (total_bytes is None or not progress_bar)
 
         with tqdm.trange(total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, **tqdm_options) as pbar:
 
@@ -134,7 +134,7 @@ class LineStream(ExitStack):
             self.iterator = self.iterator.iter_content(chunk_size=chunk_size, decode_unicode=False)
 
         self.pending = None
-        disable_progress_bar = total_bytes is None or not progress_bar
+        disable_progress_bar = tqdm_options.pop('disable') if 'disable' in tqdm_options else (total_bytes is None or not progress_bar)
 
         self.pbar = tqdm.tqdm(total=total_bytes, disable=disable_progress_bar, dynamic_ncols=dynamic_ncols, unit_scale=unit_scale, **tqdm_options)
         self.enter_context(self.pbar)
@@ -180,6 +180,7 @@ class LineStream(ExitStack):
         try:
           n = self.sizes.pop(line)
           self.pbar.update(n)
+          return True
         except KeyError:
           pass
 

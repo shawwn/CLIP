@@ -132,7 +132,8 @@ async def data_to_url_async(path):
         report_error(caught, data=orig, path=path, code=response.status_code)
 
 
-async def process(client, callback, url, pbar, fake=False, timeout=30.0):
+async def process(client, callback, url, stream, fake=False, timeout=30.0):
+  pbar = stream.pbar
   if fake:
     wait_time = randint(1, 2)
     pbar.write('downloading {} will take {} second(s)'.format(url, wait_time))
@@ -143,13 +144,17 @@ async def process(client, callback, url, pbar, fake=False, timeout=30.0):
     try:
       filepath = url2path(url)
       if os.path.isfile(filepath):
-        response = Namespace()
-        response.url = url
-        response.close = lambda: None
-        response.status_code = 200
-        async with atoomany(aiofile.async_open, filepath, 'rb') as f:
-          response.content = await f.read()
-        await callback(None, response, url=url)
+        if args.skip_downloaded:
+          noisy = False
+          raise ValueError('Skipped')
+        else:
+          response = Namespace()
+          response.url = url
+          response.close = lambda: None
+          response.status_code = 200
+          async with atoomany(aiofile.async_open, filepath, 'rb') as f:
+            response.content = await f.read()
+          await callback(None, response, url=url)
       else:
         response = await client.get(url, timeout=httpx.Timeout(timeout=timeout))
         try:
@@ -177,6 +182,8 @@ async def process(client, callback, url, pbar, fake=False, timeout=30.0):
       response.url = url
       await callback(caught, response, url=url)
       #report_error(caught, data=orig, path=path, code=response.status_code)
+    finally:
+      stream.finish(url)
         
 def shuffled(items, buffer_size=100_000):
   buffer = []
@@ -195,16 +202,17 @@ def shuffled(items, buffer_size=100_000):
 args = Namespace()
 args.args = []
 args.concurrency=50
+args.skip_downloaded = True
 args.maxcount=sys.maxsize
 args.root = os.path.join(os.getcwd(), 'download')
 
-def url2path(url):
+def url2path(url, root=None):
   u = urlparse(url)
   #path = u.netloc + u.path
   path = u.scheme + '/' + u.netloc + u.path
   if u.query:
     path += '?' + u.query
-  filepath = os.path.join(args.root, path)
+  filepath = os.path.join(root or args.root, path)
   return filepath
 
 async def main(loop, urls):
@@ -223,7 +231,6 @@ async def main(loop, urls):
         n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), current_item))
       stream.pbar.refresh()
     async def callback(err, response, url):
-      stream.finish(url)
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
         #stream.pbar.write('Failed: {!r}: {!r}'.format(str(response.url), response))
@@ -263,7 +270,7 @@ async def main(loop, urls):
         if len(dltasks) >= args.concurrency:
           # Wait for some download to finish before adding a new one
           _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
-        task = process(client, callback, url, pbar=stream.pbar)
+        task = process(client, callback, url, stream=stream)
         dltasks.add(loop.create_task(task))
       # Wait for the remaining downloads to finish
       await asyncio.wait(dltasks)
