@@ -243,8 +243,9 @@ async def main(loop, urls):
         return
       received_count += 1
       received_bytes += len(response.content)
-      image_bytes = response.content
-      with BytesIO(image_bytes) as bio, PIL.Image.open(bio) as image:
+      update()
+      #with BytesIO(response.content) as bio, PIL.Image.open(bio) as image:
+      if True:
         #url = str(response.url)
         #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
         u = urlparse(url)
@@ -252,11 +253,11 @@ async def main(loop, urls):
         path = u.scheme + '/' + u.netloc + u.path
         if u.query:
           path += '?' + u.query
-        #stream.pbar.write(os.path.join(u.netloc, u.path))
-        dim = ('%dx%d' % (image.width, image.height)).ljust(10)
-        fmt = image.format.ljust(5)
-        stream.pbar.write(dim + fmt + path)
-        update()
+        # #stream.pbar.write(os.path.join(u.netloc, u.path))
+        # dim = ('%dx%d' % (image.width, image.height)).ljust(10)
+        # fmt = image.format.ljust(5)
+        # #stream.pbar.write(dim + fmt + path)
+        stream.pbar.write(path)
     #limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
     limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
     bar_format = r'{l_bar}{bar}{r_bar}'.format(
