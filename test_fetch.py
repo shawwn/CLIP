@@ -185,14 +185,14 @@ async def process(client, callback, url, stream, fake=False, timeout=30.0):
     finally:
       stream.finish(url)
         
-def shuffled(items, buffer_size=100_000):
+def shuffled(items):
   buffer = []
   def pop():
     idx = random.randint(0, len(buffer) - 1)
     return buffer.pop(idx)
   for item in items:
     buffer.append(item)
-    if len(buffer) >= buffer_size:
+    if args.shufflesize >= 0 and len(buffer) >= args.shufflesize:
       result = pop()
       yield result
   while len(buffer) > 0:
@@ -203,6 +203,7 @@ args = Namespace()
 args.args = []
 args.concurrency=50
 args.skip_downloaded = True
+args.shufflesize = -1
 args.maxcount=sys.maxsize
 args.root = os.path.join(os.getcwd(), 'download')
 
@@ -280,6 +281,7 @@ if __name__ == '__main__':
   argv = args.args = sys.argv[1:]
   urls = argv[0] if len(argv) >= 1 and argv[0] else 'https://battle.shawwn.com/danbooru2019-s.txt'
   args.concurrency = int(argv[1]) if len(argv) >= 2 else args.concurrency
-  args.maxcount = int(argv[2]) if len(argv) >= 3 else args.maxcount
+  args.shufflesize = int(argv[2]) if len(argv) >= 3 else args.shufflesize
+  args.maxcount = int(argv[3]) if len(argv) >= 4 else args.maxcount
   loop = asyncio.get_event_loop()
   loop.run_until_complete(main(loop, urls))
