@@ -219,6 +219,68 @@ def url2path(url, root=None):
   filepath = os.path.join(root or args.root, path)
   return filepath
 
+import mock
+import threading
+from types import SimpleNamespace as NS
+from collections import OrderedDict
+import functools
+
+mocks = globals().get('mocks') or NS(advice=OrderedDict({}), deactivate=None, lock=threading.RLock())
+
+def mocks_active():
+  return mocks.deactivate is not None
+
+def mock_function(unique_name, lib, name=None, doc=None):
+  return mock_method(unique_name, lib, name=name, doc=doc, toplevel=True)
+
+def mock_method(unique_name, cls, name=None, doc=None, toplevel=False):
+  def func(fn):
+    nonlocal name
+    if name is None:
+      name = fn.__name__
+    wrapped = getattr(cls, name)
+    @functools.wraps(fn)
+    def _fn(*args, **kwargs):
+      return fn(wrapped, cls, *args, **kwargs)
+    if hasattr(wrapped, '__name__'):
+      _fn.__name__ = wrapped.__name__
+    if hasattr(wrapped, '__module__'):
+      _fn.__module__ = wrapped.__module__
+    if hasattr(wrapped, '__qualname__'):
+      _fn.__qualname__ = wrapped.__qualname__
+    if toplevel:
+      mocks.advice[unique_name] = lambda: mock.patch.object(cls, name, side_effect=_fn)
+    else:
+      mocks.advice[unique_name] = lambda: mock.patch.object(cls, name, _fn)
+    return _fn
+  return func
+
+def deactivate_mocks():
+  with mocks.lock:
+    if mocks.deactivate:
+      mocks.deactivate()
+      mocks.deactivate = None
+      return True
+
+def activate_mocks():
+  with mocks.lock:
+    deactivate_mocks()
+    with contextlib.ExitStack() as stack:
+      for creator in mocks.advice.values():
+        stack.enter_context(creator())
+      stk = stack.pop_all()
+      mocks.deactivate = stk.close
+      return stk
+
+
+@mock_method('patch_set_cookie_header', httpx._models.Cookies, 'set_cookie_header',
+    doc="""Disable cookies for performance""")
+def patch_set_cookie_header(*args, **kws):
+  #import pdb; pdb.set_trace()
+  #print('patched')
+  #sys.stdout.flush()
+  pass
+
 async def main(loop, urls):
   with utils.LineStream() as stream:
     received_bytes = 0
@@ -227,14 +289,15 @@ async def main(loop, urls):
     current_item = ''
     dltasks = set()
     def update():
-      if (received_count + failed_count) % 25 == 0:
+      if (received_count + failed_count) % 50 == 0:
         n = len(dltasks)
         t = stream.pbar.n / stream.pbar.total
         est_bytes = int(received_bytes / t) if t > 0 else 0
         est_count = int((received_count + failed_count) / t) if t > 0 else 0
+        item = '...' + current_item.rsplit('/', 1)[-1][-40:]
         stream.pbar.set_description('%d in-flight | %d done + %d failed of ~%s | %.2f MB of ~%.2f GB [%s]' % (
-          n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), current_item))
-        stream.pbar.refresh()
+          n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), item))
+        #stream.pbar.refresh()
     async def callback(err, response, url):
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
@@ -272,7 +335,7 @@ async def main(loop, urls):
       for url in shuffled(stream(urls, bar_format=bar_format), start=args.start):
         if received_count + failed_count >= args.maxcount:
           posix._exit(1)
-        current_item = '...' + url.rsplit('/', 1)[-1][-40:]
+        current_item = url
         if len(dltasks) >= args.concurrency:
           # Wait for some download to finish before adding a new one
           _done, dltasks = await asyncio.wait(dltasks, return_when=asyncio.FIRST_COMPLETED)
@@ -289,5 +352,6 @@ if __name__ == '__main__':
   args.shufflesize = int(argv[2]) if len(argv) >= 3 else args.shufflesize
   args.start = int(argv[3]) if len(argv) >= 4 else args.start
   args.maxcount = int(argv[4]) if len(argv) >= 5 else args.maxcount
+  activate_mocks()
   loop = asyncio.get_event_loop()
   loop.run_until_complete(main(loop, urls))
