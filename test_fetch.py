@@ -227,13 +227,14 @@ async def main(loop, urls):
     current_item = ''
     dltasks = set()
     def update():
-      n = len(dltasks)
-      t = stream.pbar.n / stream.pbar.total
-      est_bytes = int(received_bytes / t) if t > 0 else 0
-      est_count = int((received_count + failed_count) / t) if t > 0 else 0
-      stream.pbar.set_description('%d in-flight | %d done + %d failed of ~%s | %.2f MB of ~%.2f GB [%s]' % (
-        n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), current_item))
-      stream.pbar.refresh()
+      if (received_count + failed_count) % 25 == 0:
+        n = len(dltasks)
+        t = stream.pbar.n / stream.pbar.total
+        est_bytes = int(received_bytes / t) if t > 0 else 0
+        est_count = int((received_count + failed_count) / t) if t > 0 else 0
+        stream.pbar.set_description('%d in-flight | %d done + %d failed of ~%s | %.2f MB of ~%.2f GB [%s]' % (
+          n, received_count, failed_count, '{:,}'.format(est_count), received_bytes / (1024*1024), est_bytes / (1024*1024*1024), current_item))
+        stream.pbar.refresh()
     async def callback(err, response, url):
       nonlocal received_bytes, received_count, failed_count
       if err is not None:
@@ -245,7 +246,7 @@ async def main(loop, urls):
       received_bytes += len(response.content)
       update()
       #with BytesIO(response.content) as bio, PIL.Image.open(bio) as image:
-      if True:
+      if False:
         #url = str(response.url)
         #stream.pbar.write('Received {size} bytes: {url!r} {image!r}'.format(size=len(response.content), url=url, image=image))
         u = urlparse(url)
