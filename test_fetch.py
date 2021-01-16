@@ -185,12 +185,14 @@ async def process(client, callback, url, stream, fake=False, timeout=30.0):
     finally:
       stream.finish(url)
         
-def shuffled(items):
+def shuffled(items, start=0):
   buffer = []
   def pop():
     idx = random.randint(0, len(buffer) - 1)
     return buffer.pop(idx)
-  for item in items:
+  for i, item in enumerate(items):
+    if i < start:
+      continue
     buffer.append(item)
     if args.shufflesize >= 0 and len(buffer) >= args.shufflesize:
       result = pop()
@@ -204,6 +206,7 @@ args.args = []
 args.concurrency=50
 args.skip_downloaded = True
 args.shufflesize = -1
+args.start=0
 args.maxcount=sys.maxsize
 args.root = os.path.join(os.getcwd(), 'download')
 
@@ -264,7 +267,7 @@ async def main(loop, urls):
         bar='{bar}'
         )
     async with httpx.AsyncClient(limits=limits) as client:
-      for i, url in enumerate(shuffled(stream(urls, bar_format=bar_format))):
+      for url in shuffled(stream(urls, bar_format=bar_format), start=args.start):
         if received_count + failed_count >= args.maxcount:
           posix._exit(1)
         current_item = '...' + url.rsplit('/', 1)[-1][-40:]
@@ -282,6 +285,7 @@ if __name__ == '__main__':
   urls = argv[0] if len(argv) >= 1 and argv[0] else 'https://battle.shawwn.com/danbooru2019-s.txt'
   args.concurrency = int(argv[1]) if len(argv) >= 2 else args.concurrency
   args.shufflesize = int(argv[2]) if len(argv) >= 3 else args.shufflesize
-  args.maxcount = int(argv[3]) if len(argv) >= 4 else args.maxcount
+  args.start = int(argv[3]) if len(argv) >= 4 else args.start
+  args.maxcount = int(argv[4]) if len(argv) >= 5 else args.maxcount
   loop = asyncio.get_event_loop()
   loop.run_until_complete(main(loop, urls))
