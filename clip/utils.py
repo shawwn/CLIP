@@ -179,11 +179,14 @@ class LineStream(ExitStack):
 
     def update(self, line):
         n = len(line)
-        line = line.splitlines()
-        assert len(line) == 1
-        line = line[0]
-        if isinstance(line, bytes) and self.decode_unicode:
-            line = line.decode('utf-8')
+        if False:
+          line = line.splitlines()
+          assert len(line) == 1
+          line = line[0]
+        else:
+          line = line.rstrip('\r\n')
+        # if isinstance(line, bytes) and self.decode_unicode:
+        #     line = line.decode('utf-8')
         #self.sizes.add(line, n)
         return line
 
